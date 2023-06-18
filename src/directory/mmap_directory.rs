@@ -7,18 +7,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, Weak};
 
 use common::StableDeref;
-use fs4::FileExt;
 use memmap2::Mmap;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 
 use crate::core::META_FILEPATH;
 use crate::directory::error::{
-    DeleteError, LockError, OpenDirectoryError, OpenReadError, OpenWriteError,
+    DeleteError, OpenDirectoryError, OpenReadError, OpenWriteError,
 };
 use crate::directory::file_watcher::FileWatcher;
 use crate::directory::{
-    AntiCallToken, Directory, DirectoryLock, FileHandle, Lock, OwnedBytes, TerminatingWrite,
+    AntiCallToken, Directory, FileHandle, OwnedBytes, TerminatingWrite,
     WatchCallback, WatchHandle, WritePtr,
 };
 #[cfg(unix)]
@@ -477,26 +476,6 @@ impl Directory for MmapDirectory {
         let full_path = self.resolve_path(path);
         atomic_write(&full_path, content)?;
         Ok(())
-    }
-
-    fn acquire_lock(&self, lock: &Lock) -> Result<DirectoryLock, LockError> {
-        let full_path = self.resolve_path(&lock.filepath);
-        // We make sure that the file exists.
-        let file: File = OpenOptions::new()
-            .write(true)
-            .create(true) //< if the file does not exist yet, create it.
-            .open(full_path)
-            .map_err(LockError::wrap_io_error)?;
-        if lock.is_blocking {
-            file.lock_exclusive().map_err(LockError::wrap_io_error)?;
-        } else {
-            file.try_lock_exclusive().map_err(|_| LockError::LockBusy)?
-        }
-        // dropping the file handle will release the lock.
-        Ok(DirectoryLock::from(Box::new(ReleaseLockFile {
-            path: lock.filepath.clone(),
-            _file: file,
-        })))
     }
 
     fn watch(&self, watch_callback: WatchCallback) -> crate::Result<WatchHandle> {
